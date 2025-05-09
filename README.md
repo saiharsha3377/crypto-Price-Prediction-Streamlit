@@ -47,3 +47,16 @@ Frontend: Streamlit, Plotly, Cufflinks
 Backend: Python, Pandas, Datetime, YFinance, Binance API
 
 ML Model: Facebook Prophet
+
+
+
+```bash
+# Clone the repo
+git clone https://github.com/saiharsha3377/crypto-price-predictor-app.git
+cd crypto-price-predictor-app
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the app
+streamlit run app.py
