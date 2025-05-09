@@ -1,0 +1,8 @@
+# Required Libraries
+
+streamlit
+pandas
+yfinance
+cufflinks
+dotenv
+prophet
