@@ -38,31 +38,19 @@ st.sidebar.header('Query Parameters Price')
 price_ticker = st.sidebar.selectbox('Ticker', list(symbol_map.keys()))
 yf_symbol = symbol_map[price_ticker]
 
-df_price = yf.download(yf_symbol, period="1d", interval="1m")
-if df_price.empty:
-    st.error("Failed to load live price data.")
-    st.stop()
-
-current_price = df_price["Close"].iloc[-1]
-previous_close = df_price["Close"].iloc[-2]
+df = yf.download(yf_symbol, period="1d", interval="1m")
+current_price = df["Close"].iloc[-1]
+previous_close = df["Close"].iloc[-2]
 delta = current_price - previous_close
 
-st.metric(label=price_ticker, value=float(current_price), delta=float(delta))
+st.metric(
+    label=price_ticker,
+    value=float(current_price),
+    delta=float(delta)
+)
 
-periods = ["2y", "1y", "6mo", "3mo", "1mo", "5d", "1d"]
+df_candle = yf.download(yf_symbol, period="2y")
 
-df_candle = pd.DataFrame()
-for p in periods:
-    df_candle = yf.download(yf_symbol, period=p)
-    if not df_candle.empty:
-        break
-
-if df_candle.empty:
-    st.error("No historical data available for this token.")
-    st.stop()
-
-df_candle["Close"] = pd.to_numeric(df_candle["Close"], errors="coerce")
-df_candle = df_candle.dropna(subset=["Close"])
 df_candle.reset_index(inplace=True)
 df_candle.set_index("Date", inplace=True)
 
@@ -130,10 +118,8 @@ df_train = df_train.rename(columns={"Date": "ds", "Close": "y"})
 
 m = Prophet(seasonality_mode="multiplicative")
 m.fit(df_train)
-
 future_years = m.make_future_dataframe(periods=years_period)
 future_days = m.make_future_dataframe(periods=n_days)
-
 forecast_years = m.predict(future_years)
 forecast_days = m.predict(future_days)
 
