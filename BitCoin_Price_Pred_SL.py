@@ -11,152 +11,125 @@ from prophet.plot import plot_plotly
 import os
 import requests
 
-# App title
 st.markdown('''
 # 📊Crypto Price and Prediction App
 **Credits**
 - App built by [Thirumala Sai Harsha Inumarthi](https://www.linkedin.com/in/saiharsha3377)
-- Built in `Python` using `streamlit`, `yfinance`, `cufflinks`, `pandas`, `dotenv`, `datetime`, and `prophet`
-- Track real-time crypto prices and predict future trends using interactive charts and AI-powered forecasting with Prophet.
-
-**Features:**
-> Live Price Updates from Binance (e.g., BTC, ETH, SOL), Candlestick Charts, EMA, and Bollinger Bands, Custom Interval Selection
-(15m, 30m, 1h, 1d, etc.), AI Predictions using Facebook Prophet, Short-term (7–90 days), Long-term (up to 10 years), Yahoo Finance Integration 
-for reliable market data.
 ''')
 st.write('---')
 
-# Pandas Options
 pd.options.display.float_format = '${:,.2f}'.format
-
-# Load from .env
 load_dotenv()
-base_url = os.getenv("BASE_URL", "https://api.binance.com/api/v3/klines")
 
+coin_map = {
+    "BTCUSDT": "bitcoin",
+    "ETHUSDT": "ethereum",
+    "ATOMUSDT": "cosmos",
+    "SOLUSDT": "solana",
+    "ADAUSDT": "cardano",
+    "DOTUSDT": "polkadot",
+    "MATICUSDT": "matic-network",
+    "AVAXUSDT": "avalanche-2",
+    "NEARUSDT": "near",
+    "AAVEUSDT": "aave",
+    "FTMUSDT": "fantom",
+    "RUNEUSDT": "thorchain"
+}
 
-def load_binance_tickers():
-    url = "https://api.binance.com/api/v3/ticker/24hr"
-    try:
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        response.raise_for_status()
-        return pd.DataFrame(response.json())
-    except Exception as e:
-        st.error("❌ Failed to load Binance price data.")
-        st.write(e)
-        st.stop()
+def load_prices():
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "vs_currency": "usd",
+        "ids": ",".join(coin_map.values())
+    }
+    r = requests.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    return pd.DataFrame(r.json())
 
-df = load_binance_tickers()
+df = load_prices()
 
-
-# Function for Binance URL builder
-def make_klines_url(symbol, **kwargs):
-    url = base_url + f"?symbol={symbol}"
-    for key, value in kwargs.items():
-        url += f"&{key}={value}"
-    return url
-
-# Custom function for rounding values
-def round_value(input_value):
-    if input_value.values > 1:
-        a = float(round(input_value, 2))
-    else:
-        a = float(round(input_value, 8))
-    return a
-
-# STREAMLIT Sidebar Price
 st.sidebar.header('Query Parameters Price')
-price_ticker = st.sidebar.selectbox('Ticker', ('BTCUSDT', 'ETHUSDT', 'ATOMUSDT', 'SOLUSDT', 'ADAUSDT', 'DOTUSDT', 
-                                               'MATICUSDT', 'AVAXUSDT', 'NEARUSDT', 'AAVEUSDT', 'FTMUSDT', 'RUNEUSDT'))
+price_ticker = st.sidebar.selectbox('Ticker', list(coin_map.keys()))
 interval_selectbox = st.sidebar.selectbox('Interval', ("1d", "4h", "1h", "30m", "15m"))
 
-# Retrieve Ticker Price
-selected_crypto_index = list(df.symbol).index(price_ticker)
-col_df = df[df.symbol == price_ticker]
-col_price = round_value(col_df.weightedAvgPrice)
-col_percent = f'{float(col_df.priceChangePercent)}%'
+coin_id = coin_map[price_ticker]
+row = df[df["id"] == coin_id]
 
-# STREAMLIT Price metric
-st.metric(label=price_ticker, value=col_price, delta=col_percent)
+st.metric(
+    label=price_ticker,
+    value=float(row["current_price"]),
+    delta=str(float(row["price_change_percentage_24h"])) + "%"
+)
 
-# Binance klines DataFrame Preparation
-klines_url = make_klines_url(price_ticker, interval=interval_selectbox)
+def load_candles(coin_id):
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+    params = {"vs_currency": "usd", "days": "max"}
+    r = requests.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    data = r.json()["prices"]
+    d = pd.DataFrame(data, columns=["timestamp", "Close"])
+    d["Date"] = pd.to_datetime(d["timestamp"], unit="ms")
+    d.set_index("Date", inplace=True)
+    return d
 
-try:
-    response = requests.get(klines_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-    response.raise_for_status()
-    klines_ticker_price = pd.DataFrame(response.json())
-except Exception as e:
-    st.error("❌ Failed to load Binance Klines data.")
-    st.write(e)
-    st.stop()
+klines_ticker_price = load_candles(coin_id)
 
-klines_ticker_price.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close Time', 
-                               'Quote Asset Volume', 'Number of Trades', 'TB Base Volume', 'TB Quote Volume', 'Ignore']
-klines_ticker_price.drop(['Close Time', 'Quote Asset Volume', 'Number of Trades', 'TB Base Volume', 'TB Quote Volume', 'Ignore'], axis=1, inplace=True)
-klines_ticker_price['Date'] = pd.to_datetime(klines_ticker_price['Date']/1000, unit='s')
-klines_ticker_price.set_index(pd.DatetimeIndex(klines_ticker_price['Date']), inplace=True)
-
-# STREAMLIT kline DataFrame Preview
-st.subheader(f'{price_ticker} Klines Dataframe Preview')
+st.subheader(f'{price_ticker} Price Dataframe')
 st.write(klines_ticker_price.tail())
 
-# STREAMLIT functions klines Dataframe Plotting
 def plot_raw_data():
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=klines_ticker_price['Date'], y=klines_ticker_price['Close'], name='Close'))
+    fig.add_trace(go.Scatter(x=klines_ticker_price.index, y=klines_ticker_price["Close"]))
     fig.layout.update(xaxis_rangeslider_visible=True)
     st.plotly_chart(fig)
 
 def plot_raw_data_log():
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=klines_ticker_price['Date'], y=klines_ticker_price['Close'], name="Close"))
+    fig.add_trace(go.Scatter(x=klines_ticker_price.index, y=klines_ticker_price["Close"]))
     fig.update_yaxes(type="log")
     fig.layout.update(xaxis_rangeslider_visible=True)
     st.plotly_chart(fig)
 
 def plot_bb_data():
-    qf = cf.QuantFig(klines_ticker_price, legend='top', name='GS')
+    temp = klines_ticker_price.copy()
+    temp["Open"] = temp["Close"]
+    temp["High"] = temp["Close"]
+    temp["Low"] = temp["Close"]
+    qf = cf.QuantFig(temp, legend='top', name='Crypto')
     qf.add_bollinger_bands()
-    qf.add_ema(periods=[12,26,200], color=['red', 'orange', 'black'])
+    qf.add_ema(periods=[12, 26, 200])
     qf.add_volume()
     fig = qf.iplot(asFigure=True)
     st.plotly_chart(fig)
 
-# STREAMLIT Multi Option for Plot 
-options_klines = st.multiselect('Customize your Dashboard with Charts', ['log', 'raw', 'bb_ema'])
+options_klines = st.multiselect('Customize Charts', ['log', 'raw', 'bb_ema'])
 if len(options_klines) == 0:
-    st.subheader(f'{price_ticker} Klines Range Express Data')
-    express = px.area(klines_ticker_price, x='Date', y='Close')
+    st.subheader(f'{price_ticker} Price Area Chart')
+    express = px.area(klines_ticker_price, x=klines_ticker_price.index, y='Close')
     st.write(express)
 
-# STREAMLIT for loop to check plot choice selected
 for choice in options_klines:
     if choice == 'log':
-        st.subheader(f'{price_ticker} Klines Range Slider Log Data')
         plot_raw_data_log()
     if choice == 'raw':
-        st.subheader(f'{price_ticker} Klines Range Slider Raw Data')
         plot_raw_data()
     if choice == 'bb_ema':
-        st.subheader(f'{price_ticker} Klines Range BB, EMA Data')
         plot_bb_data()
 
-# STREAMLIT Sidebar Prediction
 st.sidebar.header('Query Parameters Prediction')
-prediction_ticker = st.sidebar.selectbox('Ticker',('BTC-USD', 'ETH-USD', 'ATOM-USD', 'SOL-USD', 'ADA-USD', 'DOT-USD', 'MATIC-USD', 'AVAX-USD', 'NEAR-USD', 
-                                                   'AAVE-USD', 'FTM-USD', 'RUNE-USD') )
+prediction_ticker = st.sidebar.selectbox('Prediction Ticker',
+    ('BTC-USD', 'ETH-USD', 'ATOM-USD', 'SOL-USD', 'ADA-USD', 'DOT-USD',
+     'MATIC-USD', 'AVAX-USD', 'NEAR-USD', 'AAVE-USD', 'FTM-USD', 'RUNE-USD'))
+
 start_date = st.sidebar.date_input("Start date", date(2016, 1, 1))
 end_date = st.sidebar.date_input("End date", datetime.today())
 
-# STREAMLIT years/days prediction slicer
-n_years = st.sidebar.slider("Years of prediction:", min_value=1, max_value=10, step=1)
-n_days = st.sidebar.slider("Days of prediction:", min_value=7, max_value=90)
+n_years = st.sidebar.slider("Years of prediction:", 1, 10)
+n_days = st.sidebar.slider("Days of prediction:", 7, 90)
 years_period = n_years * 365
 
-# Yahoo Finance DataFrame
 df_yf = yf.download(prediction_ticker, start_date, end_date)
 df_yf.reset_index(inplace=True)
-
 df_yf['Close'] = pd.to_numeric(df_yf['Close'], errors='coerce')
 df_yf = df_yf.dropna(subset=['Close'])
 
@@ -170,41 +143,22 @@ future_days = m.make_future_dataframe(periods=n_days)
 forecast_years = m.predict(future_years)
 forecast_days = m.predict(future_days)
 
-# STREAMLIT Yahoo Finance DataFrame Preview
-def df_yf_preview():
-    st.subheader(f'{prediction_ticker} Yahoo Finance DataFrame Preview')
-    st.write(df_yf.tail())
-
-def plot_yf_raw_data():
-    st.subheader(f'{prediction_ticker} Facebook Prophet Forecasting Plot')
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_yf['Date'], y=df_yf['Open'], name=f"{prediction_ticker} Open"))
-    fig.add_trace(go.Scatter(x=df_yf['Date'], y=df_yf['Close'], name=f"{prediction_ticker} Close"))
-    fig.layout.update(xaxis_rangeslider_visible=True)
-    st.plotly_chart(fig)
-
-# STREAMLIT Forecasting DataFrame and Components Plotting
 def plot_year_prediction():
-    st.subheader(f'{prediction_ticker} Forecasting Plot for {n_years} Years')
     fig1 = plot_plotly(m, forecast_years)
     st.plotly_chart(fig1)
 
 def plot_year_components():
-    st.subheader(f'{prediction_ticker} Years Components')
     fig2 = m.plot_components(forecast_years)
     st.write(fig2)
 
 def plot_day_prediction():
-    st.subheader(f'{prediction_ticker} Forecasting Plot for {n_days} Days')
     fig3 = plot_plotly(m, forecast_days)
     st.plotly_chart(fig3)
 
 def plot_day_components():
-    st.subheader(f'{prediction_ticker} Days Components')
     fig4 = m.plot_components(forecast_days)
     st.write(fig4)
 
-# STREAMLIT Buttons for Prediction Plotting
 if st.button('Year Prediction Plot'):
     plot_year_prediction()
     plot_year_components()
