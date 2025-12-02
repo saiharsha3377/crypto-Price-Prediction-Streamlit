@@ -9,6 +9,7 @@ import plotly.express as px
 from prophet import Prophet
 from prophet.plot import plot_plotly
 import os
+import requests
 
 # App title
 st.markdown('''
@@ -32,8 +33,20 @@ pd.options.display.float_format = '${:,.2f}'.format
 load_dotenv()
 base_url = os.getenv("BASE_URL", "https://api.binance.com/api/v3/klines")
 
-# Binance ticker's list DataFrame
-df = pd.read_json('https://api.binance.com/api/v3/ticker/24hr')
+
+def load_binance_tickers():
+    url = "https://api.binance.com/api/v3/ticker/24hr"
+    try:
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        response.raise_for_status()
+        return pd.DataFrame(response.json())
+    except Exception as e:
+        st.error("❌ Failed to load Binance price data.")
+        st.write(e)
+        st.stop()
+
+df = load_binance_tickers()
+
 
 # Function for Binance URL builder
 def make_klines_url(symbol, **kwargs):
@@ -67,7 +80,16 @@ st.metric(label=price_ticker, value=col_price, delta=col_percent)
 
 # Binance klines DataFrame Preparation
 klines_url = make_klines_url(price_ticker, interval=interval_selectbox)
-klines_ticker_price = pd.read_json(klines_url)
+
+try:
+    response = requests.get(klines_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    response.raise_for_status()
+    klines_ticker_price = pd.DataFrame(response.json())
+except Exception as e:
+    st.error("❌ Failed to load Binance Klines data.")
+    st.write(e)
+    st.stop()
+
 klines_ticker_price.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close Time', 
                                'Quote Asset Volume', 'Number of Trades', 'TB Base Volume', 'TB Quote Volume', 'Ignore']
 klines_ticker_price.drop(['Close Time', 'Quote Asset Volume', 'Number of Trades', 'TB Base Volume', 'TB Quote Volume', 'Ignore'], axis=1, inplace=True)
@@ -132,20 +154,15 @@ n_days = st.sidebar.slider("Days of prediction:", min_value=7, max_value=90)
 years_period = n_years * 365
 
 # Yahoo Finance DataFrame
-df_yf = yf.download(prediction_ticker, start_date, end_date)  # Get the historical prices for this ticker
-
-# Clean and prepare the DataFrame
+df_yf = yf.download(prediction_ticker, start_date, end_date)
 df_yf.reset_index(inplace=True)
 
-# Ensure 'Close' is numeric
 df_yf['Close'] = pd.to_numeric(df_yf['Close'], errors='coerce')
-df_yf = df_yf.dropna(subset=['Close'])  # Drop rows with NaN values
+df_yf = df_yf.dropna(subset=['Close'])
 
-# Forecasting DataFrame Preparation
 df_train = df_yf[['Date', 'Close']]
 df_train = df_train.rename(columns={"Date": "ds", "Close": "y"})
 
-# Forecasting using Prophet
 m = Prophet(seasonality_mode="multiplicative")
 m.fit(df_train)
 future_years = m.make_future_dataframe(periods=years_period)
@@ -158,7 +175,6 @@ def df_yf_preview():
     st.subheader(f'{prediction_ticker} Yahoo Finance DataFrame Preview')
     st.write(df_yf.tail())
 
-# STREAMLIT functions Yahoo Finance Dataframe Plotting
 def plot_yf_raw_data():
     st.subheader(f'{prediction_ticker} Facebook Prophet Forecasting Plot')
     fig = go.Figure()
