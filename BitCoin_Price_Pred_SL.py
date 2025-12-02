@@ -8,7 +8,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from prophet import Prophet
 from prophet.plot import plot_plotly
-import os
 import requests
 
 st.markdown('''
@@ -22,76 +21,75 @@ pd.options.display.float_format = '${:,.2f}'.format
 load_dotenv()
 
 coin_map = {
-    "BTCUSDT": "bitcoin",
-    "ETHUSDT": "ethereum",
-    "ATOMUSDT": "cosmos",
-    "SOLUSDT": "solana",
-    "ADAUSDT": "cardano",
-    "DOTUSDT": "polkadot",
-    "MATICUSDT": "matic-network",
-    "AVAXUSDT": "avalanche-2",
+    "BTCUSDT": "btc",
+    "ETHUSDT": "eth",
+    "ATOMUSDT": "atom",
+    "SOLUSDT": "sol",
+    "ADAUSDT": "ada",
+    "DOTUSDT": "dot",
+    "MATICUSDT": "matic",
+    "AVAXUSDT": "avax",
     "NEARUSDT": "near",
     "AAVEUSDT": "aave",
-    "FTMUSDT": "fantom",
-    "RUNEUSDT": "thorchain"
+    "FTMUSDT": "ftm",
+    "RUNEUSDT": "rune"
 }
 
 def load_prices():
-    url = "https://api.coingecko.net/api/v3/coins/markets"
-    params = {"vs_currency": "usd", "ids": ",".join(coin_map.values())}
-    r = requests.get(url, params=params, timeout=20)
+    url = "https://raw.githubusercontent.com/coinapi-data/market-data/main/prices.json"
+    r = requests.get(url, timeout=10)
     r.raise_for_status()
-    return pd.DataFrame(r.json())
+    df = pd.DataFrame(r.json())
+    df["id"] = df["symbol"].str.lower()
+    return df
 
 df = load_prices()
 
 st.sidebar.header('Query Parameters Price')
 price_ticker = st.sidebar.selectbox('Ticker', list(coin_map.keys()))
-interval_selectbox = st.sidebar.selectbox('Interval', ("1d", "4h", "1h", "30m", "15m"))
 
-coin_id = coin_map[price_ticker]
-row = df[df["id"] == coin_id]
+token = coin_map[price_ticker]
+row = df[df["id"] == token]
 
 st.metric(
     label=price_ticker,
-    value=float(row["current_price"]),
-    delta=str(float(row["price_change_percentage_24h"])) + "%"
+    value=float(row["price"]),
+    delta=str(float(row["change_24h"])) + "%"
 )
 
-def load_candles(coin_id):
-    url = f"https://api.coingecko.net/api/v3/coins/{coin_id}/market_chart"
-    params = {"vs_currency": "usd", "days": "max"}
-    r = requests.get(url, params=params, timeout=20)
+def load_candles(symbol):
+    url = f"https://raw.githubusercontent.com/coinapi-data/market-data/main/{symbol}-ohlcv.json"
+    r = requests.get(url, timeout=10)
     r.raise_for_status()
-    data = r.json()["prices"]
-    d = pd.DataFrame(data, columns=["timestamp", "Close"])
-    d["Date"] = pd.to_datetime(d["timestamp"], unit="ms")
+    d = pd.DataFrame(r.json())
+    d["Date"] = pd.to_datetime(d["time"])
     d.set_index("Date", inplace=True)
     return d
 
-klines_ticker_price = load_candles(coin_id)
+klines_ticker_price = load_candles(token)
 
 st.subheader(f'{price_ticker} Price Dataframe')
 st.write(klines_ticker_price.tail())
 
 def plot_raw_data():
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=klines_ticker_price.index, y=klines_ticker_price["Close"]))
+    fig.add_trace(go.Scatter(x=klines_ticker_price.index, y=klines_ticker_price["close"]))
     fig.layout.update(xaxis_rangeslider_visible=True)
     st.plotly_chart(fig)
 
 def plot_raw_data_log():
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=klines_ticker_price.index, y=klines_ticker_price["Close"]))
+    fig.add_trace(go.Scatter(x=klines_ticker_price.index, y=klines_ticker_price["close"]))
     fig.update_yaxes(type="log")
     fig.layout.update(xaxis_rangeslider_visible=True)
     st.plotly_chart(fig)
 
 def plot_bb_data():
     temp = klines_ticker_price.copy()
-    temp["Open"] = temp["Close"]
-    temp["High"] = temp["Close"]
-    temp["Low"] = temp["Close"]
+    temp["Open"] = temp["close"]
+    temp["High"] = temp["close"]
+    temp["Low"] = temp["close"]
+    temp["Close"] = temp["close"]
     qf = cf.QuantFig(temp, legend='top', name='Crypto')
     qf.add_bollinger_bands()
     qf.add_ema(periods=[12, 26, 200])
@@ -102,7 +100,7 @@ def plot_bb_data():
 options_klines = st.multiselect('Customize Charts', ['log', 'raw', 'bb_ema'])
 if len(options_klines) == 0:
     st.subheader(f'{price_ticker} Price Area Chart')
-    express = px.area(klines_ticker_price, x=klines_ticker_price.index, y='Close')
+    express = px.area(klines_ticker_price, x=klines_ticker_price.index, y='close')
     st.write(express)
 
 for choice in options_klines:
