@@ -38,20 +38,28 @@ st.sidebar.header('Query Parameters Price')
 price_ticker = st.sidebar.selectbox('Ticker', list(symbol_map.keys()))
 yf_symbol = symbol_map[price_ticker]
 
-df = yf.download(yf_symbol, period="1d", interval="1m")
-current_price = df["Close"].iloc[-1]
-previous_close = df["Close"].iloc[-2]
+df_price = yf.download(yf_symbol, period="1d", interval="1m")
+if df_price.empty:
+    st.error("Failed to load live price data.")
+    st.stop()
+
+current_price = df_price["Close"].iloc[-1]
+previous_close = df_price["Close"].iloc[-2]
 delta = current_price - previous_close
 
 st.metric(label=price_ticker, value=float(current_price), delta=float(delta))
 
-df_candle = yf.download(yf_symbol, period="2y")
+periods = ["2y", "1y", "6mo", "3mo", "1mo", "5d", "1d"]
+
+df_candle = pd.DataFrame()
+for p in periods:
+    df_candle = yf.download(yf_symbol, period=p)
+    if not df_candle.empty:
+        break
 
 if df_candle.empty:
-    df_candle = yf.download(yf_symbol, period="1y")
-
-if df_candle.empty:
-    df_candle = yf.download(yf_symbol, period="6mo")
+    st.error("No historical data available for this token.")
+    st.stop()
 
 df_candle["Close"] = pd.to_numeric(df_candle["Close"], errors="coerce")
 df_candle = df_candle.dropna(subset=["Close"])
