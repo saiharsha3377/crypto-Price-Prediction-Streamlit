@@ -37,12 +37,9 @@ coin_map = {
 }
 
 def load_prices():
-    url = "https://api.coingecko.com/api/v3/coins/markets"
-    params = {
-        "vs_currency": "usd",
-        "ids": ",".join(coin_map.values())
-    }
-    r = requests.get(url, params=params, timeout=10)
+    url = "https://api.coingecko.net/api/v3/coins/markets"
+    params = {"vs_currency": "usd", "ids": ",".join(coin_map.values())}
+    r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     return pd.DataFrame(r.json())
 
@@ -62,9 +59,9 @@ st.metric(
 )
 
 def load_candles(coin_id):
-    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+    url = f"https://api.coingecko.net/api/v3/coins/{coin_id}/market_chart"
     params = {"vs_currency": "usd", "days": "max"}
-    r = requests.get(url, params=params, timeout=10)
+    r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     data = r.json()["prices"]
     d = pd.DataFrame(data, columns=["timestamp", "Close"])
