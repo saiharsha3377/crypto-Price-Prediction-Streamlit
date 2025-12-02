@@ -43,14 +43,18 @@ current_price = df["Close"].iloc[-1]
 previous_close = df["Close"].iloc[-2]
 delta = current_price - previous_close
 
-st.metric(
-    label=price_ticker,
-    value=float(current_price),
-    delta=float(delta)
-)
+st.metric(label=price_ticker, value=float(current_price), delta=float(delta))
 
 df_candle = yf.download(yf_symbol, period="2y")
 
+if df_candle.empty:
+    df_candle = yf.download(yf_symbol, period="1y")
+
+if df_candle.empty:
+    df_candle = yf.download(yf_symbol, period="6mo")
+
+df_candle["Close"] = pd.to_numeric(df_candle["Close"], errors="coerce")
+df_candle = df_candle.dropna(subset=["Close"])
 df_candle.reset_index(inplace=True)
 df_candle.set_index("Date", inplace=True)
 
@@ -118,8 +122,10 @@ df_train = df_train.rename(columns={"Date": "ds", "Close": "y"})
 
 m = Prophet(seasonality_mode="multiplicative")
 m.fit(df_train)
+
 future_years = m.make_future_dataframe(periods=years_period)
 future_days = m.make_future_dataframe(periods=n_days)
+
 forecast_years = m.predict(future_years)
 forecast_days = m.predict(future_days)
 
